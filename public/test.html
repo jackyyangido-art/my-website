@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>餐厅空间测试</title>
+</head>
+<body>
+  <h1>测试绘图功能</h1>
+  <canvas id="myCanvas" width="420" height="300" style="border:1px solid #333"></canvas>
+
+  <script>
+    const c = document.getElementById('myCanvas');
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#cfe8ff';
+    ctx.fillRect(0,0,c.width,c.height);
+    ctx.fillStyle = '#111';
+    ctx.font = '20px Arial';
+    ctx.fillText('餐厅空间测试图', 120, 160);
+  </script>
+</body>
+</html>
