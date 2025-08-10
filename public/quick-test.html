@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI 渲染快速测试</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;margin:0;padding:24px;background:#0b1220;color:#e5e7eb}
+    .card{max-width:980px;margin:0 auto;background:#0f172a;border:1px solid rgba(59,130,246,.25);border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(2,6,23,.4)}
+    .head,.foot{padding:16px 20px;border-color:rgba(59,130,246,.25)}
+    .head{border-bottom:1px solid rgba(59,130,246,.25)}
+    .foot{border-top:1px solid rgba(59,130,246,.25);display:flex;gap:10px;justify-content:flex-end}
+    .body{padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    label{font-size:13px;color:#cbd5e1;margin-bottom:6px;display:block}
+    input[type="text"], textarea{width:100%;padding:10px 12px;border:1px solid rgba(148,163,184,.25);border-radius:10px;background:#0b1326;color:#e5e7eb}
+    textarea{min-height:110px}
+    .preview{background:#0b1326;border:1px dashed rgba(148,163,184,.25);border-radius:10px;padding:8px;min-height:160px;display:flex;align-items:center;justify-content:center;color:#94a3b8}
+    .thumb{max-width:100%;max-height:340px;border-radius:10px}
+    button{padding:10px 14px;border:none;border-radius:10px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer}
+    .muted{color:#94a3b8;font-size:12px}
+    .ok{color:#10b981}.warn{color:#f59e0b}.err{color:#ef4444}
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="head"><b>AI 渲染快速测试（POST /render）</b></div>
+  <div class="body">
+    <div>
+      <label>房间图（本地文件，可选）</label>
+      <input id="room" type="file" accept="image/*">
+      <div id="preview" class="preview">预览</div>
+      <div class="muted" style="margin-top:8px">
+        或者粘贴图片 URL（可选）：
+        <input id="imgUrl" type="text" placeholder="https://example.com/room.jpg">
+      </div>
+    </div>
+    <div>
+      <label>提示词（例：现代餐厅、暖色木质+黄铜、柔和环境光、写实）</label>
+      <textarea id="prompt">modern restaurant interior, warm wood and brass accents, cozy ambient lighting, photorealistic, ultra-detailed</textarea>
+      <label>强度（0.0~1.0，越大改动越大，默认 0.45）</label>
+      <input id="strength" type="text" value="0.45">
+      <div id="status" style="margin-top:10px">状态：待开始</div>
+    </div>
+  </div>
+  <div class="foot">
+    <button id="btn">开始渲染</button>
+  </div>
+</div>
+
+<div id="out" style="max-width:980px;margin:14px auto 0;"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+// 预览本地图片
+$('#room').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) { $('#preview').textContent='预览'; return; }
+  const url = URL.createObjectURL(f);
+  $('#preview').innerHTML = `<img class="thumb" src="${url}">`;
+});
+
+// 可选：上线后快速检查 /health
+(async () => {
+  try {
+    const r = await fetch('/health');
+    if (r.ok) {
+      const j = await r.json();
+      console.log('Health:', j);
+    }
+  } catch {}
+})();
+
+async function urlToFile(url, filename='image.jpg'){
+  const resp = await fetch(url);
+  const blob = await resp.blob();
+  return new File([blob], filename, { type: blob.type || 'image/jpeg' });
+}
+
+$('#btn').addEventListener('click', async () => {
+  try{
+    $('#status').textContent = '状态：上传中…';
+
+    const form = new FormData();
+    const prompt = $('#prompt').value.trim();
+    const strength = $('#strength').value.trim() || '0.45';
+    if (prompt) form.append('prompt', prompt);
+    form.append('strength', strength);
+
+    // 有本地文件优先；否则用 URL
+    const local = $('#room').files[0];
+    const url = $('#imgUrl').value.trim();
+    if (local) {
+      form.append('roomImage', local);
+    } else if (url) {
+      try {
+        const f = await urlToFile(url);
+        form.append('roomImage', f);
+      } catch(e) {
+        console.warn('URL 转文件失败', e);
+      }
+    }
+
+    const resp = await fetch('/render', { method:'POST', body: form });
+    const js = await resp.json();
+
+    if(!resp.ok){
+      $('#status').innerHTML = `<span class="err">失败：${resp.status}</span>`;
+      console.error(js);
+      alert('渲染失败：' + (js.detail || js.error || resp.status));
+      return;
+    }
+
+    $('#status').innerHTML = `<span class="ok">渲染完成</span>`;
+
+    // 兼容两种返回：imageBase64 或 imageUrl
+    let imgSrc = '';
+    if (js.imageBase64) {
+      imgSrc = 'data:image/png;base64,' + js.imageBase64;
+    } else if (js.imageUrl) {
+      imgSrc = js.imageUrl.startsWith('http') ? js.imageUrl : (js.imageUrl[0] === '/' ? js.imageUrl : '/'+js.imageUrl);
+    }
+    if (imgSrc) {
+      $('#out').innerHTML = `<a href="${imgSrc}" download="output.png"><img class="thumb" src="${imgSrc}"></a>`;
+    } else {
+      $('#out').textContent = '渲染成功，但未返回图片地址。';
+    }
+  }catch(e){
+    console.error(e);
+    $('#status').innerHTML = `<span class="err">异常：${e.message}</span>`;
+    alert('异常：' + e.message);
+  }
+});
+</script>
+</body>
+</html>
